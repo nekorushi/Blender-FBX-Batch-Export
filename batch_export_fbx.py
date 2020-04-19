@@ -11,9 +11,8 @@ bl_info = {
 
 import bpy
 import os
-from bpy.types import Panel, Operator
 
-class BE_FBX_OT_Export(Operator):    
+class BE_FBX_OT_Export(bpy.types.Operator):    
     bl_idname = "befbx.export"
     bl_label = "Export"
     
@@ -35,6 +34,7 @@ class BE_FBX_OT_Export(Operator):
         for obj in selection:
 
             obj.select_set(True)
+            backupPosition = centerObject(obj)
 
             view_layer.objects.active = obj
 
@@ -45,13 +45,10 @@ class BE_FBX_OT_Export(Operator):
             kwargs["filepath"] = fn + ".fbx"
             kwargs["use_selection"] = True
 
-            backupPosition = centerObject(obj)
-
             bpy.ops.export_scene.fbx(**kwargs)
 
-            set_object_to_loc(obj, backupPosition)
-
             obj.select_set(False)
+            obj.location = backupPosition
 
             print("written:", fn)
 
@@ -64,7 +61,7 @@ class BE_FBX_OT_Export(Operator):
         self.report({'INFO'}, "Selected files exported!")
         return {'FINISHED'}
 
-class BE_FBX_OT_RefreshPresets(Operator):    
+class BE_FBX_OT_RefreshPresets(bpy.types.Operator):    
     bl_idname = "befbx.refresh_presets"
     bl_label = "RefreshPresets"
     
@@ -74,7 +71,7 @@ class BE_FBX_OT_RefreshPresets(Operator):
         self.report({'INFO'}, "Presets list reloaded!")
         return {'FINISHED'}
 
-class BE_FBX_PT_Panel(Panel):
+class BE_FBX_PT_Panel(bpy.types.Panel):
     bl_label = "FBX Batch Export"
     bl_idname = "BE_FBX_PT_Panel"
     bl_space_type = "VIEW_3D"
@@ -99,7 +96,7 @@ def register():
     bpy.types.Scene.target_path = bpy.props.StringProperty \
         (
             name = "Export target path",
-            default = os.path.dirname(bpy.data.filepath),
+            default = "",
             description = "Set directory to which selected objects will be exported.",
             subtype = "DIR_PATH"
         )
@@ -115,10 +112,9 @@ def unregister():
     del bpy.types.Scene.target_path
 
 def centerObject(obj):
-    currentPosition = get_object_loc(obj)
-    set_object_to_loc(obj, (0,0,0))
+    currentPosition = obj.location.copy()
+    obj.location = (0,0,0)
     return currentPosition
-
 
 def loadPreset(context):
     filepath = bpy.utils.preset_find(context.scene.preset_list, 'operator/export_scene.fbx/')       
