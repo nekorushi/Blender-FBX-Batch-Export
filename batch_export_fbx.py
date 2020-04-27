@@ -18,9 +18,13 @@ class BE_FBX_OT_Export(bpy.types.Operator):
     
     def execute(self, context):
         basedir = context.scene.target_path
+        
+        if basedir.startswith('//'):
+            basedir = bpy.path.abspath(basedir)
 
         if not basedir:
-            raise Exception("Target directory is not specified!")
+            self.report({'ERROR_INVALID_INPUT'}, "Target directory is not specified!")
+            return {'CANCELLED'}
 
         view_layer = bpy.context.view_layer
 
@@ -31,18 +35,37 @@ class BE_FBX_OT_Export(bpy.types.Operator):
 
         loadPreset(context)
 
-        for obj in selection:
+        if len(selection) <= 0:
+            self.report({'ERROR_INVALID_INPUT'}, "No objects selected!")
+            return {'CANCELLED'}
+
+        for index in range(len(selection)):
+            obj = selection[index]
 
             obj.select_set(True)
             backupPosition = centerObject(obj)
 
             view_layer.objects.active = obj
 
-            name = bpy.path.clean_name(obj.name)
-            fn = os.path.join(basedir, name)
 
+            folder_name_format = context.scene.folder_name_format
+            file_name = bpy.path.clean_name(obj.name)
+                        
+            
+            if context.scene.individual_folders and folder_name_format:
+                name_inserted = folder_name_format.replace('${name}', bpy.path.clean_name(obj.name))
+                index_inserted = name_inserted.replace('${index}', str(index))
+                folder_name = index_inserted
+                file_dir = os.path.join(basedir, folder_name)
+                if not os.path.isdir(file_dir):
+                    os.mkdir(file_dir)
+            else:
+                file_dir = basedir
+                
+            full_path = os.path.join(file_dir, file_name + ".fbx")
+            
             kwargs = loadPreset(context)
-            kwargs["filepath"] = fn + ".fbx"
+            kwargs["filepath"] = full_path
             kwargs["use_selection"] = True
 
             bpy.ops.export_scene.fbx(**kwargs)
@@ -50,7 +73,7 @@ class BE_FBX_OT_Export(bpy.types.Operator):
             obj.select_set(False)
             obj.location = backupPosition
 
-            print("written:", fn)
+            print("written:", full_path)
 
 
         view_layer.objects.active = obj_active
@@ -80,15 +103,41 @@ class BE_FBX_PT_Panel(bpy.types.Panel):
     
     def draw(self, context):
         layout = self.layout
+        scene = context.scene
         
-        layout.row().label(text="Export target path", icon="FILE_FOLDER")
-        layout.row().prop(context.scene, 'target_path', text="")
-
-        layout.row().label(text = "Preset", icon="PRESET")
-        row = layout.row().split(factor=0.85)
-        row.prop_menu_enum(context.scene, "preset_list", text=context.scene.preset_list)
-        row.operator("befbx.refresh_presets", text = "", icon = "FILE_REFRESH")
-
+        
+        # Export directories section
+        box = layout.box()
+        
+        row = box.row()
+        row.label(text="Export target path", icon="FILE_FOLDER")
+        
+        row = box.row()
+        row.prop(scene, 'target_path', text="")
+        
+        row = box.row()
+        row.prop(scene, 'individual_folders', text="Individual folders")
+        
+        if scene.individual_folders:        
+            row = box.row()
+            row.label(text="Folder name format", icon="FILE_TEXT")
+        
+            row = box.row()
+            row.prop(scene, 'folder_name_format', text="")
+    
+        # Preset section
+        box = layout.box()
+        
+        row = box.row()
+        row.label(text = "Preset", icon="PRESET")
+        
+        row = box.row()
+        row.prop_menu_enum(scene, "preset_list", text=scene.preset_list)
+        
+        row = box.row()
+        row.operator("befbx.refresh_presets", text = "Reload presets", icon = "FILE_REFRESH")
+        
+        # Confirm section
         layout.row().operator("befbx.export", text = "Export", icon = "EXPORT")
         
 def register():
@@ -100,6 +149,20 @@ def register():
             description = "Set directory to which selected objects will be exported.",
             subtype = "DIR_PATH"
         )
+    bpy.types.Scene.individual_folders = bpy.props.BoolProperty \
+        (
+            name="Individual folders",
+            default = False,
+            description = "Should each exported file be placed inside separate folder?",
+        )
+    bpy.types.Scene.folder_name_format = bpy.props.StringProperty \
+        (
+            name = "Folders name format",
+            default = "${name}",
+            description = "Individual folders name format.\n\nType ${name} to include object name.\nType ${index} to include object number (Warning! Naming folders by index is not reliable, you can make a mess when exporting multiple times)"
+        )
+    
+        
     bpy.utils.register_class(BE_FBX_OT_Export)
     bpy.utils.register_class(BE_FBX_OT_RefreshPresets)
     bpy.utils.register_class(BE_FBX_PT_Panel)
@@ -130,6 +193,7 @@ def loadPreset(context):
             exec(line, globals(), locals())
         
         return op.__dict__
+    return {}
     
 def loadPresetsList():
     preset_paths = bpy.utils.preset_paths('operator/export_scene.fbx/')
