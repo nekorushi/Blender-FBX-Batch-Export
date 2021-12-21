@@ -3,7 +3,7 @@ bl_info = {
     "author" : "nekorushi",
     "descrtion" : "Export selected objects as FBX. Supports predefined presets.",
     "blender" : (2, 80, 0),
-    "version" : (0, 1),
+    "version" : (0, 2),
     "location" : "View3D -> Sidebar -> FBX",
     "warning" : "",
     "category" : "Import-Export"
@@ -50,7 +50,12 @@ class BE_FBX_OT_Export(bpy.types.Operator):
 
             folder_name_format = context.scene.folder_name_format
             file_name = bpy.path.clean_name(obj.name)
-                        
+            child_objects = []
+
+            if context.scene.include_child_objects:
+                child_objects = getChildren(obj, True)
+                for child in child_objects:
+                    child.select_set(True)
             
             if context.scene.individual_folders and folder_name_format:
                 name_inserted = folder_name_format.replace('${name}', bpy.path.clean_name(obj.name))
@@ -71,6 +76,9 @@ class BE_FBX_OT_Export(bpy.types.Operator):
             bpy.ops.export_scene.fbx(**kwargs)
 
             obj.select_set(False)
+            for child in child_objects:
+                child.select_set(False)
+                
             obj.location = backupPosition
 
             print("written:", full_path)
@@ -124,6 +132,9 @@ class BE_FBX_PT_Panel(bpy.types.Panel):
         
             row = box.row()
             row.prop(scene, 'folder_name_format', text="")
+        
+        row = box.row()
+        row.prop(scene, 'include_child_objects', text="Include child objects")
     
         # Preset section
         box = layout.box()
@@ -155,6 +166,12 @@ def register():
             default = False,
             description = "Should each exported file be placed inside separate folder?",
         )
+    bpy.types.Scene.include_child_objects = bpy.props.BoolProperty \
+        (
+            name="Include child objects",
+            default = False,
+            description = "Should each selected object have its children included in the export?",
+        )
     bpy.types.Scene.folder_name_format = bpy.props.StringProperty \
         (
             name = "Folders name format",
@@ -173,6 +190,15 @@ def unregister():
     bpy.utils.unregister_class(BE_FBX_PT_Panel)
     del bpy.types.Scene.preset_list
     del bpy.types.Scene.target_path
+
+def getChildren(obj, nested = False): 
+    children = [] 
+    for childObj in bpy.data.objects: 
+        if childObj.parent == obj: 
+            children.append(childObj)
+            if nested:
+                children.extend(getChildren(childObj, True))
+    return children 
 
 def centerObject(obj):
     currentPosition = obj.location.copy()
